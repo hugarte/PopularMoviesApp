@@ -7,10 +7,16 @@ import android.os.Bundle;
 import android.support.v4.app.Fragment;
 import android.util.Log;
 import android.view.LayoutInflater;
+import android.view.Menu;
+import android.view.MenuInflater;
+import android.view.MenuItem;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.GridView;
 
+import org.json.JSONArray;
 import org.json.JSONException;
+import org.json.JSONObject;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -18,8 +24,9 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.util.ArrayList;
 
-
+/*
 /**
  * A simple {@link Fragment} subclass.
  * Use the {@link MoviesFragment#newInstance} factory method to
@@ -28,12 +35,14 @@ import java.net.URL;
 public class MoviesFragment extends Fragment {
 
     private final String LOG_TAG = MoviesFragment.class.getSimpleName();
+    private GridView moviesView;
+    private MoviesAdapter moviesAdapter;
 
     public MoviesFragment() {
         // Required empty public constructor
     }
 
-    /**
+    /*/**
      * Use this factory method to create a new instance of
      * this fragment using the provided parameters.
      *
@@ -54,46 +63,72 @@ public class MoviesFragment extends Fragment {
     @Override
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        setHasOptionsMenu(true);
 
+    }
+
+    @Override
+    public void onCreateOptionsMenu(Menu menu, MenuInflater inflater) {
+        inflater.inflate(R.menu.moviesfragment, menu);
+    }
+
+    @Override
+    public boolean onOptionsItemSelected(MenuItem item) {
+
+        int id = item.getItemId();
+        if (id == R.id.action_refresh) {
+            updateMovies();
+            return true;
+        }
+        return super.onOptionsItemSelected(item);
     }
 
     @Override
     public View onCreateView(LayoutInflater inflater, ViewGroup container,
                              Bundle savedInstanceState) {
-        // Inflate the layout for this fragment
-        return inflater.inflate(R.layout.fragment_movies, container, false);
-    }
-    public class FetchMovies extends AsyncTask<Void, Void, Void> {
 
+        // Inflate the layout for this fragment
+        View rootView = inflater.inflate(R.layout.fragment_movies, container, false);
+        //String[] movies = {"The Martian", "Interstellar", "Suicide squat", "The lion King", "Peli de prueba"};
+        moviesView = (GridView) rootView.findViewById(R.id.moviesContainer);
+
+
+
+
+
+
+        return rootView;
+    }
+
+    private void updateMovies() {
+        FetchMoviesTask moviesTask = new FetchMoviesTask();
+        moviesTask.execute();
+    }
+
+
+    public class FetchMoviesTask extends AsyncTask<Void, Void, ArrayList<MovieInfo>> {
+
+        private final String LOG_TAG = FetchMoviesTask.class.getSimpleName();
+        private final String BASE_POSTER_URL = "http://image.tmdb.org/t/p/w342/";
         @Override
-        protected Void doInBackground(Void... voids) {
+        protected ArrayList<MovieInfo> doInBackground(Void... voids) {
             HttpURLConnection urlConnection = null;
             BufferedReader reader = null;
 
             // Will contain the raw JSON response as a string.
-            String forecastJsonStr = null;
-            String format = "json";
-            String units = "metric";
-            int numDays = 7;
+            String moviesJsonStr = null;
+
 
             try {
                 // Construct the URL for the OpenWeatherMap query
                 // Possible parameters are avaiable at OWM's forecast API page, at
                 // http://openweathermap.org/API#forecast
-                final String baseUrl = "http://api.openweathermap.org/data/2.5/forecast/daily";
-                final String QUERY_PARAM = "q";
-                final String FORMAT_PARAM = "mode";
-                final String UNITS_PARAM = "units";
-                final String DAYS_PARAM = "cnt";
-                final String APPID_PARAM = "APPID";
+                final String baseUrl = "http://api.themoviedb.org/3/movie/popular";
+                final String QUERY_PARAM = "api_key";
 
 
                 Uri builtUri = Uri.parse(baseUrl).buildUpon()
-                        .appendQueryParameter(QUERY_PARAM, params[0])
-                        .appendQueryParameter(FORMAT_PARAM, format)
-                        .appendQueryParameter(UNITS_PARAM, units)
-                        .appendQueryParameter(DAYS_PARAM, Integer.toString(numDays))
-                        .appendQueryParameter(APPID_PARAM, BuildConfig.OPEN_WEATHER_MAP_API_KEY)
+                        .appendQueryParameter(QUERY_PARAM, BuildConfig.THE_MOVIE_DB_API_KEY)
                         .build();
 
                 URL url = new URL(builtUri.toString());
@@ -129,7 +164,8 @@ public class MoviesFragment extends Fragment {
                     // Stream was empty.  No point in parsing.
                     return null;
                 }
-                forecastJsonStr = buffer.toString();
+                moviesJsonStr = buffer.toString();
+                Log.d(LOG_TAG, "Movies JSON String: " + moviesJsonStr);
 
             } catch (IOException e) {
                 Log.e(LOG_TAG, "Error ", e);
@@ -149,16 +185,61 @@ public class MoviesFragment extends Fragment {
                 }
             }
             try {
-                return getWeatherDataFromJson(forecastJsonStr, numDays);
-            } catch (JSONException e) {
+                return getMovieDataFromJson(moviesJsonStr);
+            } catch (Exception e) {
+                e.printStackTrace();
+
+            }
+            /*catch (JSONException e) {
 
                 e.printStackTrace();
-            }
+            }*/
             return null;
         }
+
+        private ArrayList<MovieInfo> getMovieDataFromJson(String moviesJsonStr) throws JSONException {
+
+            //Create list to store the results
+            ArrayList<MovieInfo> resultList = new ArrayList<MovieInfo>();
+
+            //Constants to extract JSON nodes
+            final String RESULTS = "results";
+            final String POSTER_PATH = "poster_path";
+            final String ID = "id";
+            final String RELEASE_DATE = "release_date";
+            final String OVERVIEW = "overview";
+            final String ORIGINAL_TITLE = "original_title";
+            final String VOTE_AVERAGE = "vote_average";
+
+
+            //Create JSON Object from input parameter and JSON array of results from JSONObject
+            JSONObject moviesJSON = new JSONObject(moviesJsonStr);
+            JSONArray moviesArray = moviesJSON.getJSONArray(RESULTS);
+
+            //iterate over the results array to extract desired nodes and add to the result list;
+            for (int i = 0; i < moviesArray.length(); i++) {
+                MovieInfo movieInfo = new MovieInfo();
+                JSONObject movieJSONObject = moviesArray.getJSONObject(i);
+                movieInfo.setPoster_path(BASE_POSTER_URL + movieJSONObject.getString(POSTER_PATH));
+                movieInfo.setId(movieJSONObject.getString(ID));
+                movieInfo.setRelease_date(movieJSONObject.getString(RELEASE_DATE));
+                movieInfo.setOverview(movieJSONObject.getString(OVERVIEW));
+                movieInfo.setOriginal_title(movieJSONObject.getString(ORIGINAL_TITLE));
+                movieInfo.setVote_average(movieJSONObject.getString(VOTE_AVERAGE));
+                resultList.add(movieInfo);
+            }
+            return resultList;
+        }
+        @Override
+        protected void onPostExecute(ArrayList<MovieInfo> strings) {
+            moviesAdapter = new MoviesAdapter(getActivity(),strings);
+            moviesView.setAdapter(moviesAdapter);
+            super.onPostExecute(strings);
         }
 
+
     }
-
-
 }
+
+
+
